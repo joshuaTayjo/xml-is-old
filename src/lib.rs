@@ -1,5 +1,5 @@
 use std::{collections::HashMap, fs, iter, rc::Weak, str::Chars};
-type Attrributes = HashMap<String, String>;
+pub type Attributes = HashMap<String, String>;
 
 pub struct XMLTree {
     version: String,
@@ -7,32 +7,30 @@ pub struct XMLTree {
     root: XMLNode,
 }
 
+#[derive(Debug)]
 pub struct XMLNode {
-    node_type: NodeType,
+    node_contents: NodeType,
     children: Vec<XMLNode>,
     parent: Weak<XMLNode>,
 }
+#[derive(Debug)]
 pub enum NodeType {
     Text(String),
     Element(ElementData),
 }
 
+#[derive(Debug)]
 pub struct ElementData {
     tag_name: String,
-    attributes: Attrributes,
-}
-
-pub enum NodeContents {
-    NodeType,
-    String,
+    attributes: Attributes,
 }
 
 impl Default for XMLNode {
     fn default() -> Self {
         XMLNode {
-            node_type: NodeType::Element(ElementData {
+            node_contents: NodeType::Element(ElementData {
                 tag_name: String::from("Default"),
-                attributes: Attrributes::new(),
+                attributes: Attributes::new(),
             }),
             children: Vec::new(),
             parent: Weak::new(),
@@ -46,9 +44,9 @@ impl Default for XMLTree {
             version: String::from("1.0"),
             encoding: String::from("UTF-8"),
             root: XMLNode {
-                node_type: NodeType::Element(ElementData {
+                node_contents: NodeType::Element(ElementData {
                     tag_name: String::from("root"),
-                    attributes: Attrributes::new(),
+                    attributes: Attributes::new(),
                 }),
                 children: Vec::new(),
                 parent: Weak::new(),
@@ -79,18 +77,41 @@ pub fn parse_tag(itr: &mut iter::Peekable<Chars>) -> Result<XMLNode, NodeError> 
         tag.push(itr.next().unwrap());
     }
     tag.push(itr.next().unwrap());
-    println!("{}", tag);
-    let mut new_node = XMLNode {
-        ..Default::default()
-    };
-    new_node.node_type = NodeType::Element(ElementData {
-        tag_name: tag[1..3].to_string(),
-        attributes: Attrributes::new(),
+
+    let mut inner_tag = tag[1..tag.len() - 1].trim().chars();
+    let tag_name: String = inner_tag
+        .by_ref()
+        .take_while(|x| !x.is_whitespace())
+        .collect();
+    let binding = inner_tag.collect::<String>();
+    let attributes: Vec<(String, String)> = binding
+        .split_whitespace()
+        .map(|elt| {
+            let mut attr = elt.split("=");
+            (
+                attr.next().unwrap().to_string(),
+                attr.next().unwrap().to_string(),
+            )
+        })
+        .collect();
+    let mut tag_attributes = Attributes::new();
+    attributes.into_iter().for_each(|attr| {
+        tag_attributes.insert(attr.0, attr.1);
     });
 
-    Ok(XMLNode {
+    println!("{}", tag_name);
+    println!("{:#?}", tag_attributes);
+
+    let new_node = XMLNode {
+        node_contents: NodeType::Element(ElementData {
+            tag_name,
+            attributes: tag_attributes,
+        }),
         ..Default::default()
-    })
+    };
+    println!("{:#?}", new_node);
+
+    Ok(new_node)
 }
 
 pub fn deserialize(file_path: &str) -> XMLTree {
