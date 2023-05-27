@@ -8,9 +8,15 @@ pub struct XMLTree {
 }
 
 #[derive(Debug)]
+pub enum InnerTemp {
+    XMLNode,
+    Temp(String),
+}
+
+#[derive(Debug)]
 pub struct XMLNode {
     node_contents: NodeType,
-    children: Vec<XMLNode>,
+    children: Vec<InnerTemp>,
     parent: Weak<XMLNode>,
 }
 #[derive(Debug)]
@@ -68,10 +74,23 @@ impl std::fmt::Display for NodeError {
     }
 }
 
-pub fn parse_tag(itr: &mut iter::Peekable<Chars>) -> Result<XMLNode, NodeError> {
+pub struct ClosingTagError(String);
+
+impl std::fmt::Display for ClosingTagError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "There should be an closing tag for tag {}", self.0)
+    }
+}
+
+pub enum XMLError {
+    NodeError(char),
+    ClosingTagError(String),
+}
+
+pub fn parse_tag(itr: &mut iter::Peekable<Chars>) -> Result<XMLNode, XMLError> {
     let mut tag = String::new();
     if *itr.peek().unwrap() != '<' {
-        return Err(NodeError(*itr.peek().unwrap()));
+        return Err(XMLError::NodeError(*itr.peek().unwrap()));
     }
     while *itr.peek().unwrap() != '>' {
         tag.push(itr.next().unwrap());
@@ -99,16 +118,25 @@ pub fn parse_tag(itr: &mut iter::Peekable<Chars>) -> Result<XMLNode, NodeError> 
         tag_attributes.insert(attr.0, attr.1);
     });
 
-    println!("{}", tag_name);
-    println!("{:#?}", tag_attributes);
+    let rest_of_tag: String = itr.collect();
+
+    let end_tag = format!("</{}>", tag_name);
+    let end_tag_index = rest_of_tag.find(end_tag.as_str());
+
+    if end_tag_index.is_none() {
+        return Err(XMLError::ClosingTagError(tag_name));
+    }
+    let inside_of_tag = &rest_of_tag[..end_tag_index.unwrap()];
 
     let new_node = XMLNode {
         node_contents: NodeType::Element(ElementData {
             tag_name,
             attributes: tag_attributes,
         }),
+        children: vec![InnerTemp::Temp(inside_of_tag.to_string())],
         ..Default::default()
     };
+
     println!("{:#?}", new_node);
 
     Ok(new_node)
@@ -116,14 +144,12 @@ pub fn parse_tag(itr: &mut iter::Peekable<Chars>) -> Result<XMLNode, NodeError> 
 
 pub fn deserialize(file_path: &str) -> XMLTree {
     let res = fs::read_to_string(file_path).expect("The requested file doesn't exist!");
-    println!("{}", res);
 
     let mut chars = res.chars().peekable();
     while chars.peek().unwrap_or(&'c').is_whitespace() {
         chars.next();
     }
-    parse_tag(&mut chars);
-    println!("{}", chars.next().unwrap());
+    let tag = parse_tag(&mut chars);
     XMLTree {
         ..Default::default()
     }
