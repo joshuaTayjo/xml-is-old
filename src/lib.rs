@@ -1,3 +1,4 @@
+// use regex;
 use std::{collections::HashMap, fs, iter, rc::Weak, str::Chars};
 pub type Attributes = HashMap<String, String>;
 
@@ -8,15 +9,9 @@ pub struct XMLTree {
 }
 
 #[derive(Debug)]
-pub enum InnerTemp {
-    XMLNode,
-    Temp(String),
-}
-
-#[derive(Debug)]
 pub struct XMLNode {
     node_contents: NodeType,
-    children: Vec<InnerTemp>,
+    children: Vec<NodeType>,
     parent: Weak<XMLNode>,
 }
 #[derive(Debug)]
@@ -74,6 +69,7 @@ impl std::fmt::Display for NodeError {
     }
 }
 
+#[derive(Debug)]
 pub struct ClosingTagError(String);
 
 impl std::fmt::Display for ClosingTagError {
@@ -82,40 +78,37 @@ impl std::fmt::Display for ClosingTagError {
     }
 }
 
+#[derive(Debug)]
 pub enum XMLError {
-    NodeError(char),
-    ClosingTagError(String),
+    NodeError(NodeError),
+    ClosingTagError(ClosingTagError),
 }
 
 pub fn parse_tag(itr: &mut iter::Peekable<Chars>) -> Result<XMLNode, XMLError> {
     let mut tag = String::new();
     if *itr.peek().unwrap() != '<' {
-        return Err(XMLError::NodeError(*itr.peek().unwrap()));
+        return Err(XMLError::NodeError(NodeError(*itr.peek().unwrap())));
     }
     while *itr.peek().unwrap() != '>' {
         tag.push(itr.next().unwrap());
     }
     tag.push(itr.next().unwrap());
 
+    //Isolate just the data from the starting tag
     let mut inner_tag = tag[1..tag.len() - 1].trim().chars();
     let tag_name: String = inner_tag
         .by_ref()
         .take_while(|x| !x.is_whitespace())
         .collect();
+    //After name is taken, rest of inner_tag should be attributes
     let binding = inner_tag.collect::<String>();
-    let attributes: Vec<(String, String)> = binding
-        .split_whitespace()
-        .map(|elt| {
-            let mut attr = elt.split("=");
-            (
-                attr.next().unwrap().to_string(),
-                attr.next().unwrap().to_string(),
-            )
-        })
-        .collect();
     let mut tag_attributes = Attributes::new();
-    attributes.into_iter().for_each(|attr| {
-        tag_attributes.insert(attr.0, attr.1);
+    binding.split_whitespace().for_each(|elt| {
+        let mut attr = elt.split("=");
+        tag_attributes.insert(
+            attr.next().unwrap().to_string(),
+            attr.next().unwrap().to_string(),
+        );
     });
 
     let rest_of_tag: String = itr.collect();
@@ -124,7 +117,7 @@ pub fn parse_tag(itr: &mut iter::Peekable<Chars>) -> Result<XMLNode, XMLError> {
     let end_tag_index = rest_of_tag.find(end_tag.as_str());
 
     if end_tag_index.is_none() {
-        return Err(XMLError::ClosingTagError(tag_name));
+        return Err(XMLError::ClosingTagError(ClosingTagError(tag_name)));
     }
     let inside_of_tag = &rest_of_tag[..end_tag_index.unwrap()];
 
@@ -133,11 +126,9 @@ pub fn parse_tag(itr: &mut iter::Peekable<Chars>) -> Result<XMLNode, XMLError> {
             tag_name,
             attributes: tag_attributes,
         }),
-        children: vec![InnerTemp::Temp(inside_of_tag.to_string())],
+        children: vec![NodeType::Text(inside_of_tag.trim().to_string())],
         ..Default::default()
     };
-
-    println!("{:#?}", new_node);
 
     Ok(new_node)
 }
@@ -149,7 +140,12 @@ pub fn deserialize(file_path: &str) -> XMLTree {
     while chars.peek().unwrap_or(&'c').is_whitespace() {
         chars.next();
     }
-    let tag = parse_tag(&mut chars);
+    let tag = match parse_tag(&mut chars) {
+        Ok(tag) => tag,
+        Err(err) => panic!("{:#?}", err),
+    };
+
+    println!("{:#?}", tag.node_contents);
     XMLTree {
         ..Default::default()
     }
