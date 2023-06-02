@@ -11,7 +11,7 @@ pub struct XMLTree {
 #[derive(Debug)]
 pub struct XMLNode {
     node_contents: NodeType,
-    children: Vec<NodeType>,
+    children: Vec<XMLNode>,
     parent: Weak<XMLNode>,
 }
 #[derive(Debug)]
@@ -126,7 +126,10 @@ pub fn parse_tag(itr: &mut iter::Peekable<Chars>) -> Result<XMLNode, XMLError> {
             tag_name,
             attributes: tag_attributes,
         }),
-        children: vec![NodeType::Text(inside_of_tag.trim().to_string())],
+        children: vec![XMLNode {
+            node_contents: NodeType::Text(inside_of_tag.trim().to_string()),
+            ..Default::default()
+        }],
         ..Default::default()
     };
 
@@ -140,13 +143,24 @@ pub fn deserialize(file_path: &str) -> XMLTree {
     while chars.peek().unwrap_or(&'c').is_whitespace() {
         chars.next();
     }
-    let tag = match parse_tag(&mut chars) {
+    let mut node = match parse_tag(&mut chars) {
         Ok(tag) => tag,
         Err(err) => panic!("{:#?}", err),
     };
 
-    println!("{:#?}", tag.node_contents);
+    match &node.children[0].node_contents {
+        NodeType::Element(_) => {}
+        NodeType::Text(text) => {
+            if text.starts_with('<') {
+                let inner_tag = parse_tag(&mut text.chars().peekable());
+                node.children.push(inner_tag.unwrap());
+            }
+        }
+    }
+    println!("{:#?}", node.children);
+
     XMLTree {
+        root: node,
         ..Default::default()
     }
 }
